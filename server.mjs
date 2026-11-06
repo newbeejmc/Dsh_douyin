@@ -14,6 +14,22 @@ import { DanmakuBridge } from './lib/cortico.mjs';
 import { resolveTrack, listLocal, findById, trackPath, musicDir, search as musicSearch, clearCache as clearMusicCache, neteaseMember, neteaseCookieOf, takeResolveReason } from './lib/music.mjs';
 import { synthesize, listVoices, voiceMediaPath, EDGE_PRESETS, KOKORO_PRESETS, MINIMAX_PRESETS } from './lib/voice.mjs';
 import {
+  fitAttach,
+  fitTouch,
+  fitIngest,
+  fitSay,
+  fitShowExercise,
+  fitSetPlan,
+  fitStartRest,
+  fitCompleteSet,
+  fitNextBlock,
+  fitReset,
+  fitView,
+  setFitHooks,
+  fitOnline,
+} from './lib/fitness-room.mjs';
+import { gymParts, searchExercises, exerciseView, exerciseSpeech, planSpeech } from './lib/gym.mjs';
+import {
   initNovel,
   saveNovel,
   novelView as storyView,
@@ -78,6 +94,13 @@ const MIME = {
 
 // ---------- SSE ----------
 const clients = new Set();
+
+// 健身房要复用故事间的点歌队列与记账，这里注入读状态的钩子（函数声明会提升，放这儿没问题）
+setFitHooks({
+  song: () => songView(),
+  stats: () => statsView(),
+  resolve: () => resolveCurrent({ force: false }),
+});
 
 function sseSend(res, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -492,6 +515,11 @@ async function doReply(job) {
     if (pre) messages.push({ role: 'system', content: pre });
   }
 
+  const broadcastNow = broadcastView();
+  if (broadcastNow.prompt) {
+    messages.push({ role: 'system', content: broadcastNow.prompt });
+  }
+
   /* 让回复知道现在念到哪一章（模型不知道就会编成「第二十三章」） */
   if (phase === 'reading' || phase === 'preparing') {
     const c = currentChapter();
@@ -680,7 +708,8 @@ function handleIncoming(body) {
         broadcast({ type: 'song', ...songView() });
         scheduleReply({ kind: 'command', command: 'next', payload: { title: cur?.title }, username: ev.username });
       })();
-    } else if (cfg.reply.auto && cfg.ai.enabled) {
+    } else if (cfg.reply.auto && cfg.ai.enabled && !fitOnline()) {
+      // 健身房直播间开着的时候，弹幕归健身教练回，故事间不再抢话（也不烧 token）
       scheduleReply({ kind: 'chat', username: ev.username, text: ev.text });
     }
   } else if (ev.kind === 'gift' && cfg.reply.auto && cfg.ai.enabled && cfg.ai.replyToGifts) {
@@ -721,6 +750,16 @@ bridge.on('event', (ev) => {
     price: info ? info.price : estimate,
     source: 'cortico',
   });
+  // 健身直播间也吃同一路弹幕（它没开的时候自己会忽略）
+  fitIngest({
+    kind: ev.kind,
+    username: ev.username,
+    text: ev.text,
+    giftName: ev.giftName,
+    count: ev.count,
+    price: info ? info.price : estimate,
+    source: 'cortico',
+  }).catch((e) => console.warn('[fitness] 弹幕处理失败', String(e.message).slice(0, 120)));
 });
 
 bridge.on('status', () => {
@@ -826,6 +865,108 @@ function broadcastNovel(mood) {
   broadcast({ type: 'stats', stats: statsView() });
 }
 
+/* ---------- 直播时段 / 场景调度 ---------- */
+let liveMode = null;
+let liveModeChangedAt = 0;
+
+function minutesOfDay(value) {
+  const m = String(value || '').trim().match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  return hour >= 24 ? null : hour * 60 + minute;
+}
+
+function clockMinute(now, timezone = 'Asia/Shanghai') {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const hour = Number(parts.find((p) => p.type === 'hour')?.value);
+    const minute = Number(parts.find((p) => p.type === 'minute')?.value);
+    if (Number.isFinite(hour) && Number.isFinite(minute)) return hour * 60 + minute;
+  } catch {
+    /* 配置了无效时区时回退到系统本地时间。 */
+  }
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+function scheduleItemAt(items, now = new Date(), timezone = 'Asia/Shanghai') {
+  const minute = clockMinute(now, timezone);
+  for (const item of Array.isArray(items) ? items : []) {
+    const start = minutesOfDay(item.start);
+    const end = minutesOfDay(item.end);
+    if (start == null || end == null || start === end) continue;
+    const active = start < end ? minute >= start && minute < end : minute >= start || minute < end;
+    if (active) return item;
+  }
+  return null;
+}
+
+function nextScheduleItem(items, now = new Date(), timezone = 'Asia/Shanghai') {
+  const minuteNow = clockMinute(now, timezone);
+  const candidates = (Array.isArray(items) ? items : [])
+    .map((item) => ({ item, start: minutesOfDay(item.start) }))
+    .filter((x) => x.start != null)
+    .map((x) => ({ ...x, delta: (x.start - minuteNow + 1440) % 1440 }));
+  candidates.sort((a, b) => a.delta - b.delta);
+  return candidates[0]?.item || null;
+}
+
+function broadcastView() {
+  const cfg = getConfig();
+  const b = cfg.broadcast || {};
+  const item = scheduleItemAt(b.schedule, new Date(), b.timezone);
+  /* forced：后台手动把某间推上台，优先级高于时段表；auto 就是 null。 */
+  const forced = b.forced === 'fitness' || b.forced === 'story' ? b.forced : null;
+  const mode = forced || (b.enabled ? String(item?.mode || b.defaultMode || 'story') : 'story');
+  const title = forced ? (forced === 'fitness' ? '健身指导' : '故事直播') : item?.title || (mode === 'fitness' ? '健身指导' : '故事直播');
+  const next = b.enabled ? nextScheduleItem(b.schedule, new Date(), b.timezone) : null;
+  return {
+    enabled: b.enabled === true,
+    mode,
+    forced,
+    title,
+    scheduleId: item?.id || null,
+    start: item?.start || null,
+    end: item?.end || null,
+    prompt: item?.prompt || '',
+    next: next ? { id: next.id || null, mode: next.mode || null, title: next.title || '', start: next.start || '' } : null,
+    changedAt: liveModeChangedAt || null,
+  };
+}
+
+function applyBroadcastMode({ force = false } = {}) {
+  const view = broadcastView();
+  if (!force && liveMode === view.mode) return view;
+  const previous = liveMode;
+  liveMode = view.mode;
+  liveModeChangedAt = Date.now();
+  if (previous && previous !== view.mode) {
+    /* 切到健身时暂停故事朗读，避免两个场景同时出声。 */
+    if (view.mode === 'fitness') {
+      clearTimeout(novelTimer);
+      novelTimer = null;
+      if (getNovel()?.phase === 'reading' || getNovel()?.phase === 'preparing') {
+        stopNovel();
+        broadcastNovel('idle');
+      }
+    }
+    pushEvent({ kind: 'system', username: '系统', text: `直播时段已切换：${view.title}` });
+  }
+  broadcast({ type: 'broadcast', broadcast: view });
+  return view;
+}
+
+function broadcastScheduleTick() {
+  const view = applyBroadcastMode();
+  /* 故事时段交给已有的小说定时器；健身时段只展示模式状态。 */
+  return view;
+}
+
 function scheduleNovel(delay) {
   clearTimeout(novelTimer);
   novelTimer = null;
@@ -903,6 +1044,7 @@ async function announceSoon(cfg, at) {
 /** 每分钟看一眼：到点提醒 / 到点开讲 */
 async function storyScheduleTick() {
   const cfg = getConfig();
+  if (broadcastView().mode === 'fitness') return;
   if (!cfg.novel?.enabled) return;
   /* 没设时间就按默认 17:00（页面也显示这个） */
   const at = nextStartMs(cfg);
@@ -1204,6 +1346,7 @@ const AUDIO_MIME = {
   '.wav': 'audio/wav',
   '.flac': 'audio/flac',
   '.webm': 'audio/webm',
+  '.mp4': 'video/mp4',
 };
 
 /** 带 Range 的文件流（<audio> 拖动进度条要它） */
@@ -1237,8 +1380,28 @@ async function streamFile(req, res, file) {
 
 async function serveStatic(req, res, urlPath) {
   let rel = decodeURIComponent(urlPath.split('?')[0]);
+  // 动作示范视频：openGym 的 catalogue/media/clip/<id>.mp4，放在 data/gym/media 下（不进仓库）
+  if (rel.startsWith('/gym-media/clip/')) {
+    const name = path.basename(rel);
+    if (!/^\d{4,6}\.mp4$/.test(name)) {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('404');
+      return;
+    }
+    try {
+      await streamFile(req, res, path.join(ROOT, 'data', 'gym', 'media', 'clip', name));
+    } catch {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('404');
+    }
+    return;
+  }
   if (rel === '/' || rel === '') rel = '/index.html';
-  if (rel === '/admin' || rel === '/admin/') rel = '/admin.html';
+  // 后台是一个页面按路径分页：/admin 基础设置、/admin/story、/admin/fitness、/admin/board
+  if (rel === '/admin' || rel === '/admin/' || rel.startsWith('/admin/')) rel = '/admin.html';
+  // 健身直播间
+  if (rel === '/fitness' || rel === '/fitness/') rel = '/fitness.html';
+  if (rel === '/gym' || rel === '/gym/') rel = '/fitness.html';
   const file = path.join(PUBLIC_DIR, rel);
   if (!file.startsWith(PUBLIC_DIR)) {
     res.writeHead(403).end('forbidden');
@@ -1293,6 +1456,7 @@ const server = createServer(async (req, res) => {
       sseSend(res, {
         type: 'init',
         config: publicConfig(),
+        broadcast: broadcastView(),
         stats: statsView(),
         balance,
         song: songView(),
@@ -1316,6 +1480,114 @@ const server = createServer(async (req, res) => {
       });
       return;
     }
+
+    // ---- 健身房直播间（自己一套 SSE，和故事间互不打扰）----
+    if (p === '/api/fitness/events' && req.method === 'GET') {
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store',
+        connection: 'keep-alive',
+        'access-control-allow-origin': '*',
+        'x-accel-buffering': 'no',
+      });
+      res.write(': connected\n\n');
+      const detach = fitAttach(res);
+      sseSend(res, { type: 'fit-extra', stats: statsView(), song: songView(), balance, config: publicConfig(), gifts: getConfig().gifts });
+      const hb = setInterval(() => {
+        try {
+          res.write(': hb\n\n');
+          fitTouch(res);
+        } catch {
+          clearInterval(hb);
+        }
+      }, 20000);
+      req.on('close', () => {
+        clearInterval(hb);
+        detach();
+      });
+      return;
+    }
+
+    if (p === '/api/fitness/state' && req.method === 'GET') {
+      return json(res, 200, { ok: true, ...fitView(), stats: statsView(), song: songView(), parts: gymParts() });
+    }
+
+    if (p === '/api/fitness/search' && req.method === 'GET') {
+      const q = url.searchParams.get('q') || '';
+      const part = url.searchParams.get('part') || '';
+      const list = searchExercises(q, { part, limit: 24 }).map((e) => exerciseView(e, { includeSteps: false }));
+      return json(res, 200, { ok: true, list });
+    }
+
+    if (p === '/api/fitness/show' && req.method === 'POST') {
+      const body = await readBody(req);
+      const view = fitShowExercise(String(body.id || body.text || ''), { by: body.by || '后台' });
+      if (!view) return json(res, 404, { ok: false, error: '动作库里没有这个动作' });
+      if (body.speak !== false) await fitSay(exerciseSpeech(view), { username: '大肥鱼', speak: body.voice !== false });
+      return json(res, 200, { ok: true, current: view });
+    }
+
+    if (p === '/api/fitness/plan' && req.method === 'POST') {
+      const body = await readBody(req);
+      const plan = fitSetPlan({
+        part: String(body.part || '全身'),
+        level: Number(body.level) || 0,
+        equip: String(body.equip || ''),
+        minutes: Number(body.minutes) || 45,
+        by: body.by || '后台',
+      });
+      if (body.speak !== false) await fitSay(planSpeech(plan, { username: body.username || '' }), { username: '大肥鱼', speak: body.voice !== false });
+      return json(res, 200, { ok: true, plan });
+    }
+
+    if (p === '/api/fitness/say' && req.method === 'POST') {
+      const body = await readBody(req);
+      const item = await fitSay(String(body.text || '').slice(0, 600), {
+        username: body.username || '大肥鱼',
+        speak: body.voice !== false,
+      });
+      if (!item) return json(res, 400, { ok: false, error: '没有可说的内容' });
+      return json(res, 200, { ok: true, item });
+    }
+
+    if (p === '/api/fitness/demo' && req.method === 'POST') {
+      // 后台「造一条弹幕」：走和抖音弹幕一样的入口，方便排练
+      const body = await readBody(req);
+      const ev = {
+        kind: String(body.kind || 'chat'),
+        username: String(body.username || '路过的朋友'),
+        text: String(body.text || ''),
+        giftName: body.giftName,
+        count: body.count,
+      };
+      fitIngest({ ...ev, source: 'demo' }).catch((e) => console.warn('[fitness] demo 失败', e.message));
+      return json(res, 200, { ok: true });
+    }
+
+    if (p === '/api/fitness/complete' && req.method === 'POST') {
+      const r = fitCompleteSet();
+      if (!r) return json(res, 409, { ok: false, error: '还没有正在做的动作' });
+      return json(res, 200, { ok: true, ...r, state: fitView() });
+    }
+
+    if (p === '/api/fitness/next' && req.method === 'POST') {
+      const next = fitNextBlock();
+      if (!next) return json(res, 409, { ok: false, error: '还没有训练计划' });
+      if (next) await fitSay(`下一个，${next.name}，${next.sets} 组 ${next.reps}。`, { username: '大肥鱼' });
+      return json(res, 200, { ok: true, current: next });
+    }
+
+    if (p === '/api/fitness/rest' && req.method === 'POST') {
+      const body = await readBody(req);
+      const rest = fitStartRest(Number(body.sec) || fit.current?.restSec || 60, { nextName: body.next || '' });
+      return json(res, 200, { ok: true, rest });
+    }
+
+    if (p === '/api/fitness/reset' && req.method === 'POST') {
+      fitReset();
+      return json(res, 200, { ok: true, state: fitView() });
+    }
+
 
     // ---- 打开直播窗时清场：音乐队列、消息队列、弹幕（最多留 50 条）----
     if (p === '/api/session/boot' && req.method === 'POST') {
@@ -1345,6 +1617,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         config: publicConfig(),
+        broadcast: broadcastView(),
         stats: statsView(),
         balance,
         song: songView(),
@@ -1452,6 +1725,19 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true, config: publicConfig() });
     }
 
+    if (p === '/api/broadcast' && req.method === 'GET') {
+      return json(res, 200, { ok: true, broadcast: broadcastScheduleTick() });
+    }
+
+    if (p === '/api/broadcast' && req.method === 'POST') {
+      const body = await readBody(req);
+      const mode = String(body.mode || 'auto');
+      const forced = mode === 'fitness' || mode === 'story' ? mode : null;
+      updateConfig({ broadcast: { forced } });
+      await saveConfig();
+      return json(res, 200, { ok: true, broadcast: applyBroadcastMode({ force: true }) });
+    }
+
     if (p === '/api/config' && req.method === 'POST') {
       const body = await readBody(req);
       // 两种写法都收：直接 {ai:{...}}，或者包一层 {patch:{ai:{...}}}
@@ -1475,6 +1761,7 @@ const server = createServer(async (req, res) => {
       if (patch.demo !== undefined) {
         patch.demo ? startDemo() : stopDemo();
       }
+      if (patch.broadcast) broadcastScheduleTick();
       broadcast({ type: 'config', config: publicConfig() });
       await refreshBalance(true);
       return json(res, 200, { ok: true, config: publicConfig() });
@@ -1837,16 +2124,18 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT_FINAL, '127.0.0.1', () => {
   const cfg = getConfig();
+  const currentBroadcast = broadcastScheduleTick();
   console.log('');
   console.log('  🐋 大肥鱼直播间已启动');
   console.log(`     直播画面  http://127.0.0.1:${PORT_FINAL}/`);
   console.log(`     操作台    http://127.0.0.1:${PORT_FINAL}/admin`);
+  console.log(`     直播时段  ${currentBroadcast.enabled ? `${currentBroadcast.title}（${currentBroadcast.start || '--:--'}-${currentBroadcast.end || '--:--'}）` : '未启用'}`);
   console.log(`     API Key   ${cfg.ai.apiKey ? '已配置' : '未配置（可在 /admin 里填）'}`);
   console.log(`     音乐源    ${cfg.music?.provider || 'auto'} · 本地 ${listLocal(cfg).length} 首`);
   console.log('');
   if (getState().currentSong && !getState().currentSong.url) resolveCurrent({ force: true });
   if (cfg.demo) startDemo();
-  if (cfg.novel?.enabled && cfg.novel?.auto) {
+  if (cfg.novel?.enabled && cfg.novel?.auto && currentBroadcast.mode !== 'fitness') {
     const list = listNovels(cfg);
     if (!list.length) {
       console.log(`  📖 小说朗读：「${cfg.novel?.dir || '短篇'}」里还没有小说，放一个 .txt 进去就会自动念`);
@@ -1865,8 +2154,10 @@ server.listen(PORT_FINAL, '127.0.0.1', () => {
   }
   /* 定时器：每分钟看一次要不要提醒 / 开讲 */
   setInterval(() => {
+    broadcastScheduleTick();
     storyScheduleTick().catch((err) => console.warn('[schedule]', err.message));
   }, 60_000);
+  broadcastScheduleTick();
   storyScheduleTick().catch(() => {});
   if (cfg.danmaku?.mode !== 'off') {
     const rid = cfg.danmaku?.roomId || cfg.roomId || '';

@@ -59,6 +59,29 @@
   "scene": {
     "bgAlpha": 0.82
   },
+  "broadcast": {
+    "enabled": false,
+    "timezone": "Asia/Shanghai",
+    "defaultMode": "story",
+    "schedule": [
+      {
+        "id": "fitness-afternoon",
+        "mode": "fitness",
+        "title": "下午 · 健身指导",
+        "start": "14:00",
+        "end": "17:00",
+        "prompt": "当前是健身指导时段。只给一般性的动作提示、节奏和鼓励，不诊断伤病，不替代医生或专业教练。"
+      },
+      {
+        "id": "story-evening",
+        "mode": "story",
+        "title": "晚上 · 故事直播",
+        "start": "19:00",
+        "end": "23:00",
+        "prompt": "当前是故事直播时段，优先围绕正在朗读的故事与观众互动，避免提前剧透。"
+      }
+    ]
+  },
   "novel": {
     "enabled": true,
     "auto": true,

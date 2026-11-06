@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>大肥鱼 · 健身房直播间</title>
+    <link rel="stylesheet" href="fitness.css" />
+  </head>
+  <body class="fit-scene">
+    <div class="bg">
+      <div class="bg-glow g1"></div>
+      <div class="bg-glow g2"></div>
+      <div class="bg-glow g3"></div>
+      <div class="grid-floor"></div>
+      <div class="mirror-wall"></div>
+      <div class="rack"></div>
+      <div class="plates"></div>
+      <div class="watermark">GYM</div>
+      <div class="grain"></div>
+    </div>
+
+    <div class="fit-stage">
+      <header class="fit-top">
+        <div class="brand">
+          <span class="logo">大肥鱼</span>
+          <span class="brand-sub">健身房 · 直播中</span>
+        </div>
+        <div class="mode-chip" id="modeChip">热身中</div>
+        <div class="top-right">
+          <div class="stat">
+            <span class="stat-k">今日消耗</span>
+            <span class="stat-v" id="todayTokens">0</span>
+            <span class="stat-k">余额</span>
+            <span class="stat-v" id="balance">—</span>
+          </div>
+          <div class="clock" id="clock">--:--</div>
+        </div>
+      </header>
+
+      <section class="dm-col card">
+        <div class="card-h">
+          <span>弹幕</span>
+          <span class="dim" id="dmCount">0</span>
+        </div>
+        <div class="feed" id="feed"></div>
+        <div class="feed-hint" id="feedHint">
+          <b>弹幕里可以直接说</b>
+          <span>想练腿　·　深蹲怎么做　·　今天练什么　·　点歌 晴天</span>
+          <span>想减脂、想练臀、要一套 20 分钟的也都行</span>
+        </div>
+      </section>
+
+      <main class="main-col">
+        <section class="stage-card card">
+          <div class="demo-wrap">
+            <div class="demo-frame" id="demoFrame">
+              <video id="demoVideo" class="demo-video" muted loop playsinline preload="auto" hidden></video>
+              <canvas id="demo" width="620" height="620" hidden></canvas>
+              <div class="demo-empty" id="demoEmpty">
+                <div class="empty-k">等一条弹幕</div>
+                <div class="empty-s">说「深蹲怎么做」，示范图就上来</div>
+              </div>
+            </div>
+            <div class="demo-badge" id="demoBadge">示范中</div>
+            <div class="eq-tag" id="eqTag">徒手</div>
+            <div class="rep-count" id="repCount" hidden><b id="repDone">0</b><span>组已完成</span></div>
+            <div class="rest-box" id="restBox" hidden>
+              <div class="rest-label">休息</div>
+              <div class="rest-time" id="restTime">01:00</div>
+              <div class="rest-next" id="restNext"></div>
+            </div>
+          </div>
+          <div class="stage-info">
+            <div class="ex-part" id="exPart">等待弹幕点动作</div>
+            <h1 id="exName">今天想练哪儿？</h1>
+            <div class="chips" id="exChips"></div>
+            <ul class="cues" id="exCues"></ul>
+            <div class="mistake" id="exMistake"></div>
+          </div>
+        </section>
+
+        <section class="plan-card card">
+          <div class="card-h">
+            <span id="planTitle">今天练什么</span>
+            <span class="dim" id="planMeta">等弹幕说「想练腿」</span>
+          </div>
+          <div class="plan-body" id="planBody">
+            <div class="plan-empty">有人点部位，我就把热身、主项、收尾排好，组数和休息都写清楚。</div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="side-col">
+        <section class="card dose-card">
+          <div class="card-h"><span>这组怎么练</span><span class="dim" id="doseMeta">等动作</span></div>
+          <div class="dose">
+            <div class="dose-item"><b id="exSets">—</b><span>组</span></div>
+            <div class="dose-item"><b id="exReps">—</b><span>次</span></div>
+            <div class="dose-item"><b id="exRest">—</b><span>组间休息（秒）</span></div>
+          </div>
+        </section>
+
+        <section class="card queue-card">
+          <div class="card-h"><span>点歌台</span><span class="dim" id="queueCount">0</span></div>
+          <div class="now-playing">
+            <div class="now-meta">
+              <div class="now-title" id="nowTitle">还没放歌</div>
+              <div class="now-by" id="nowBy">弹幕「点歌 晴天」</div>
+            </div>
+            <button class="next-btn" id="nextBtn" title="下一首">⏭</button>
+          </div>
+          <div class="progress"><div class="progress-in" id="musicProgress"></div></div>
+          <ol class="queue" id="queueList"></ol>
+        </section>
+
+        <section class="pet-zone">
+          <video id="pet" class="pet" muted playsinline loop autoplay></video>
+          <div class="pet-name">大肥鱼 · 你的教练</div>
+          <div class="voice-hint" id="voiceHint">在听弹幕…</div>
+        </section>
+      </aside>
+    </div>
+
+    <div class="sound-unlock" id="soundUnlock" hidden>
+      <div class="su-card">
+        <b>点一下开始</b>
+        <span>浏览器要先听到你的声音，才肯放我的讲解</span>
+        <button id="soundStart">进入健身房</button>
+      </div>
+    </div>
+
+    <audio id="player" preload="none"></audio>
+    <script src="fitness.js" type="module"></script>
+  </body>
+</html>

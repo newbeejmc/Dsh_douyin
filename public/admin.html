@@ -5,21 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>大肥鱼 · 操作台</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐋</text></svg>" />
-<link rel="stylesheet" href="/admin.css" />
+<link rel="stylesheet" href="/admin.css?v=20261106-side" />
 </head>
 <body>
 <header class="top">
   <div class="brand">🐋 大肥鱼 · 操作台</div>
   <div class="top-right">
     <span class="pill" id="conn">连接中…</span>
-    <a class="pill link" href="/" target="_blank">打开直播画面 ↗</a>
+    <a class="pill link" href="/" target="_blank">故事间画面 ↗</a>
+    <a class="pill link" href="/fitness" target="_blank">健身房画面 ↗</a>
   </div>
 </header>
 
+<div class="layout">
 <nav class="tabs" id="tabs">
   <button class="tab active" data-pane="basic">① 基础设置</button>
-  <button class="tab" data-pane="story">② 小说朗读</button>
-  <button class="tab" data-pane="board">③ 数据看板</button>
+  <button class="tab" data-pane="story">② 故事直播间</button>
+  <button class="tab" data-pane="fitness">③ 健身房直播间</button>
+  <button class="tab" data-pane="board">④ 数据看板</button>
 </nav>
 
 <main>
@@ -297,7 +300,102 @@
     </section>
   </div>
 
-  <!-- ================= ③ 数据看板 ================= -->
+  <!-- ================= ③ 健身房直播间 ================= -->
+  <div class="pane" id="pane-fitness">
+
+    <section class="panel">
+      <h2>健身房 · 现在怎么样</h2>
+      <p class="hint">
+        健身房有自己的画面 <a href="/fitness" target="_blank">/fitness ↗</a>（OBS 可以直接抓这个窗口）。它开着的时候，弹幕、点歌、聊天都归这间；
+        故事间会自动让位，两边不会抢话。
+      </p>
+      <div class="row">
+        <span class="pill" id="fitLive">未打开</span>
+        <span class="hint" id="fitNow" style="flex:1;min-width:0">—</span>
+      </div>
+      <div class="row">
+        <button id="fitOpen" class="primary">打开健身房画面 ↗</button>
+        <button id="fitShowStory">故事间上台</button>
+        <button id="fitShowFitness">健身房上台</button>
+        <button id="fitAuto">按时段自动</button>
+      </div>
+      <div class="result" id="fitModeState"></div>
+    </section>
+
+    <section class="panel">
+      <h2>动作台 · 让画面放哪个动作</h2>
+      <p class="hint">搜到就点「上台」，画面立刻换成这个动作，同时让大肥鱼讲一遍要点。弹幕里点动作也是走的同一条路。</p>
+      <div class="row">
+        <input id="fitQuery" placeholder="深蹲 / 硬拉 / 卧推 / 弯举…" style="flex:1" />
+        <button id="fitSearch" class="primary">搜动作</button>
+      </div>
+      <div class="row">
+        <label>部位</label>
+        <select id="fitPart"><option value="">全部</option></select>
+        <span class="hint" id="fitSearchState" style="flex:1;min-width:0">输入关键词，或留空看热门动作</span>
+      </div>
+      <ul class="list" id="fitResults"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>排课 · 今天练哪个部位</h2>
+      <p class="hint">选部位和水平，自动配热身、主项、辅助和收尾，组数、次数、休息间隔都写清楚；排完直接上台念一遍。</p>
+      <div class="row">
+        <label>部位</label>
+        <select id="fitPlanPart"></select>
+        <label>水平</label>
+        <select id="fitPlanLevel">
+          <option value="0">新手</option>
+          <option value="1">进阶</option>
+          <option value="2">老手</option>
+        </select>
+        <label>器械</label>
+        <select id="fitPlanEquip">
+          <option value="">不限</option>
+          <option value="杠铃">杠铃</option>
+          <option value="哑铃">哑铃</option>
+          <option value="徒手">徒手/自重</option>
+        </select>
+        <label>时长</label>
+        <input id="fitPlanMin" type="number" min="15" max="120" step="5" value="45" style="width:80px" /> 分钟
+        <button id="fitPlanBtn" class="primary">排一套 · 上台</button>
+      </div>
+      <div class="result" id="fitPlanState"></div>
+    </section>
+
+    <section class="panel">
+      <h2>组间控制</h2>
+      <p class="hint">讲解完想让大家跟着做，就用这里控节奏：开始休息会倒计时，到点自动喊下一组。</p>
+      <div class="row">
+        <label>休息</label>
+        <input id="fitRestSec" type="number" min="10" max="300" step="5" value="90" style="width:80px" /> 秒
+        <button id="fitRest" class="primary">开始休息</button>
+        <button id="fitComplete">这组做完了</button>
+        <button id="fitNext">下一个动作</button>
+        <button id="fitReset" class="danger">清空健身房</button>
+      </div>
+      <div class="result" id="fitRestState"></div>
+    </section>
+
+    <section class="panel">
+      <h2>教练说话 / 造弹幕</h2>
+      <p class="hint">想临时补一句（比如「手腕不舒服就换哑铃」）就在这里说，会直接配上语音。</p>
+      <div class="row">
+        <input id="fitSayText" placeholder="以教练身份说一句，会配音" style="flex:1" />
+        <button id="fitSay" class="primary">说出来</button>
+      </div>
+      <div class="row">
+        <label>昵称</label>
+        <input id="fitDmName" value="测试观众" style="width:140px" />
+        <input id="fitDmText" value="想练腿" placeholder="想练腿 / 深蹲怎么做 / 点歌 晴天" style="flex:1" />
+        <button id="fitDmChat">模拟弹幕</button>
+        <button id="fitDmGift">送礼</button>
+        <button id="fitDmEnter">有人进场</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ================= ④ 数据看板 ================= -->
   <div class="pane" id="pane-board">
     <section class="panel">
       <h2>今天</h2>
@@ -335,7 +433,8 @@
     </section>
   </div>
 </main>
+</div>
 
-<script src="/admin.js?v=20261103-1"></script>
+<script src="/admin.js?v=20261106-side"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# 大肥鱼 · 抖音「读小说」直播间
+# 大肥鱼 · 抖音直播间（读小说 / 健身房）
 
 给 OBS 用的 1920×1080 直播场景：**大肥鱼**（蓝毛鲸鱼女仆）在深蓝色的邮局里，**一章一章地念小说**。小说来自 `短篇/` 目录（每天自动化写作产出），按修改时间取最新的一本，一章合成一段语音照原文念；**一章念完休息 5 分钟**——休息时用**语音**回弹幕、聊刚念过的内容、**不剧透**后面的剧情；整本念完会摆出**作品档案**（世界观、人物、主题、写得好的地方、可以更好的地方、想问问你们），跟观众一起聊优缺点；观众随时能发「选题 XXX」给明天的故事投票。
 
@@ -11,6 +11,8 @@
 - 右中下：大肥鱼的活动区（念、挥手、谢礼物、吐泡泡…），休息时的语音回复在这里以气泡出现
 
 ![预览](preview.png)
+
+同一套服务里还有一间**健身专用直播间**：`/fitness` 画面 + `/admin/fitness` 后台，弹幕说「想练腿」就排课、说「深蹲怎么做」就切动作演示并讲解。细节见 [6.2 健身房直播间](#62-健身房直播间fitness)。
 
 仓库：<https://github.com/newbeejmc/Dsh_douyin>
 
@@ -415,6 +417,71 @@ DeepSeek 503: Service is too busy. We advise users to temporarily switch to alte
 
 ---
 
+## 6.1 按时段切换直播模式
+
+`config.json → broadcast` 控制本地时钟调度。当前示例为：14:00–17:00「健身指导」、19:00–23:00「故事直播」。程序每分钟检查一次，切换时通过 SSE 通知直播页，并把对应话术提示加入 DeepSeek 上下文；切到健身时会暂停小说朗读，避免两个音轨同时播放。
+
+这只是**同一个抖音直播间里的场景切换**。抖音直播伴侣/OBS 负责采集整屏和推流，程序不会自动创建或切换抖音账号下的多个直播间。整屏启动可双击 `整屏直播.cmd`，然后在 OBS 里使用「显示器采集」或窗口采集。
+
+操作台「③ 健身房直播间」里的「故事间上台 / 健身房上台 / 按时间自动」可以把模式钉死，不受时段表影响（对应 `config.json → broadcast.forced`）。
+
+---
+
+## 6.2 健身房直播间（`/fitness`）
+
+健身房是一个**独立的直播画面**，和故事间共用同一个服务、同一份点歌队列、同一个抖音登录态，但界面、弹幕区、动作演示都是自己的。
+
+| 打开什么 | 地址 |
+| --- | --- |
+| 健身房画面 | `http://127.0.0.1:8787/fitness?auto=1`，或双击 `打开健身房.cmd` |
+| 健身房后台 | `http://127.0.0.1:8787/admin/fitness` |
+| 故事间画面 / 后台 | `/` 与 `/admin/story` |
+| 基础设置（两个房间共用） | `/admin` |
+
+OBS 里用「窗口采集」抓这个窗口即可；要透明底加 `&bare=1`。
+
+### 弹幕在这里怎么用
+
+| 弹幕 | 直播间会做什么 |
+| --- | --- |
+| `给我推荐点动作` / `有什么练胸的` | 先反问「想练哪块」，你说了部位就挑 3 个该部位的正经动作，念第一个的组数、次数、休息和一条要点 |
+| `练胸` / `腿` / `想练腿` | 同上，直接推荐（记住这个部位，等你下一句） |
+| `安排` / `来一套` / `就这么定` | 接着刚才聊的部位排整套：热身 + 主项 + 辅助 + 收尾，念总时长、组数、动作顺序和拉伸 |
+| `换一批` | 同部位换一组动作，不推翻已排的课 |
+| `想练腿，20 分钟` | 同上，按时长压缩成短课 |
+| `今天练什么` | 有计划就说计划进度，有话题就顺着推荐，都没有就反问 |
+| `深蹲怎么做` / `硬拉要点` / `卧推` | 画面切到该动作，示范动画循环播放，同时念动作要点、组数、休息 |
+| `我肩膀有点疼` | 不推荐动作，先让你停下、别硬练，提醒必要时就医 |
+| `谢谢教练` / `你好` | 不劳烦大模型，直接回一句热乎的 |
+| `点歌 晴天` / `切歌` | 和故事间同一条队列 |
+| 其他聊天 | 大肥鱼以教练口吻回，1–3 句，带对方名字，并且知道你们刚才在聊哪个部位 |
+
+对话是**有记忆**的：说了「练胸」之后再说「安排」「换一批」「今天练什么」，都会接着胸往下走。
+
+规则：**健身房画面开着，弹幕就归健身房**（故事间不会抢话）；健身房没开时，弹幕仍由故事间处理。
+
+### 动作库
+
+`data/gym/library.json`：5301 个中文动作，字段含部位、器械、目标肌、难度、动作模式（pattern）、组数/次数/休息、中文步骤、要点、常见错误。
+
+- 数据来自 [openGym](https://github.com/DuarteSantos8/openGym) 的动作目录（6554 个，其中 5632 个有中文名），中文步骤缺的地方用按动作模式写的通用讲解补齐，另外手写了一批经典动作的要点。
+- 重新生成动作数据：`node tools/build-gym-library.mjs`（需要先把 openGym clone 到 `.tmp-gym`）。
+
+### 动作示范视频
+
+画面里那个白底的解剖插画循环动画，用的就是 openGym 仓库自带的示范素材：`catalogue/media/clip/<动作 id>.mp4`，一个动作一段、15–60KB，共 6554 段、约 160MB。
+
+- 放在 `data/gym/media/clip/<id>.mp4`，服务端用 `GET /gym-media/clip/<id>.mp4` 提供（支持 Range）。这些文件**不进仓库**（`.gitignore` 已排除 `data/gym/media`）。
+- 换机器 / 重新 clone 之后同步一次：`node tools/sync-gym-media.mjs`（`--force` 覆盖已有文件）。
+- 某一段视频缺失或坏掉时，前端会自动退回 Canvas 画的骨骼示意，不至于开天窗。
+
+
+### 后台能控什么
+
+`/admin/fitness` 五块：现在怎么样（谁在线、当前动作、今日计划、剩余休息）→ 动作台（搜动作、点「上台」）→ 排课（部位 / 水平 / 器械 / 时长）→ 组间控制（开始休息、这组做完了、下一个动作、清空健身房）→ 教练说话与造弹幕（排练用）。
+
+---
+
 ## 7. token 花费和余额怎么算
 
 - 每次调用 DeepSeek 都记 `usage`（缓存命中输入 / 未命中输入 / 输出），按**官方现价 × 当前时段**算钱：
@@ -439,10 +506,12 @@ DeepSeek 503: Service is too busy. We advise users to temporarily switch to alte
 | `ai.minReplyGapMs` / `ai.maxRepliesPerMinute` | 回弹幕的最小间隔 / 每分钟上限 |
 | `ai.replyToGifts` | 收到礼物是否答谢 |
 | `reply.auto` | `false` 时只显示弹幕、不自动回 |
+| `broadcast.enabled` | 开启按时段切换直播模式 |
+| `broadcast.schedule` | 时段数组：`start` / `end` / `mode` / `title` / `prompt`；示例为 14:00–17:00 健身、19:00–23:00 故事 |
 | `novel.enabled` / `novel.auto` | 小说朗读开关 / 自动往下念 |
 | `novel.dir` | 小说目录，默认 `短篇`（递归两层，按修改时间取最新） |
 | `novel.breakSec` | 每章念完休息多少秒，默认 **300**（最小 30） |
-| `novel.startAt` | 定时开讲时间，形如 `"20:30"`；留空 = 默认 **17:00**，填 `off` = 不定时 |
+| `novel.startAt` | 定时开讲时间，形如 `"20:30"`；本项目示例配置为 **19:00**，填 `off` = 不定时 |
 | `novel.autoStart` | 到点自动开讲（默认 `true`）；关掉就只提醒、等你手动开始 |
 | `danmaku.mode` | `auto`（填了房间号就直连）/ `off`（只认扩展） |
 | `danmaku.roomId` | 直播间号，启动时自动连（也可在 `/admin` 里填） |
@@ -497,7 +566,18 @@ lib/persona.mjs       大肥鱼人设、上下文拼装、点歌/切歌话术
 public/index.html     直播画面（七区流体布局）
 public/app.css        透明蓝玻璃样式（铺满窗口，字号 clamp）
 public/app.js         SSE 渲染、打字机、宠物动作、分段语音、礼物 toast
-public/admin.html     操作台（基础设置 / 故事电台 / 数据看板三块）
+public/admin.html     操作台（基础设置 / 故事间 / 健身房 / 数据看板四块，按路径分页）
+public/admin.js       操作台逻辑（`/admin`、`/admin/story`、`/admin/fitness`、`/admin/board`）
+public/fitness.html   健身房直播画面（动作演示 / 计划 / 弹幕 / 点歌 / 宠物）
+public/fitness.css    健身房样式（深色 + 荧光绿 + 透视地板）
+public/fitness.js     健身房前端：SSE、示范视频切换、休息倒计时、点歌
+lib/gym.mjs           动作库读写、中文检索、按部位排课、教练话术
+lib/fitness-room.mjs  健身房的独立会话：弹幕意图、当前动作、组间休息、SSE 广播
+tools/build-gym-library.mjs 从 openGym 目录生成 data/gym/library.json
+tools/sync-gym-media.mjs 把 openGym 的示范视频同步到 data/gym/media/clip
+data/gym/library.json 动作库（5301 个中文动作，脚本生成，勿手改）
+data/gym/media/clip/  动作示范视频（6554 段 mp4，脚本同步，不进仓库）
+打开健身房.cmd         打开健身房的直播窗口（app 模式 + 放行自动播放）
 public/assets/pet/    宠物动画（VP9 alpha webm，来自 dsh-pet，MIT）
 extension/            Chrome MV3 弹幕桥（抓取 + 回写）
 tools/shot.mjs        CDP 截图
@@ -528,6 +608,7 @@ data/                 每日统计 + 故事进度 / 语音缓存（自动生成�
 | POST | `/api/ai/reply` | `{text}` 让 AI 回一句 |
 | POST | `/api/ai/test` | 测 Key |
 | GET/POST | `/api/config` | 读 / 改配置（白名单字段） |
+| GET | `/api/broadcast` | 当前直播模式、时段和下一次切换 |
 | GET | `/api/balance?force=1` | 查余额 |
 | POST | `/api/song/next` | 切歌 |
 | GET | `/api/story` | 这一场到哪儿了（阶段/倒计时/正文/总结/建议） |
@@ -553,6 +634,18 @@ data/                 每日统计 + 故事进度 / 语音缓存（自动生成�
 | GET | `/api/voice/:file` | 台词 mp3/wav（支持 Range，带缓存） |
 | POST | `/api/story/config` | 保存故事设定（标题/大纲/时间/五段）并重讲 |
 | POST | `/api/reset` | 清空今日数据 |
+| GET | `/api/fitness/events` | 健身房的 SSE：`fit-state` / `fit-event` / `fit-song` / `fit-extra` |
+| GET | `/api/fitness/state` | 健身房全量状态：模式、当前动作、计划、休息、已完成组数、弹幕 |
+| GET | `/api/fitness/search?q=&part=` | 搜动作（后台动作台用） |
+| POST | `/api/fitness/show` | `{id}` 或 `{text}`：把某个动作放上台并讲解 |
+| POST | `/api/fitness/plan` | `{part, level, equip, minutes}`：排一套课并上台 |
+| POST | `/api/fitness/say` | `{text}`：以教练身份说一句 |
+| POST | `/api/fitness/demo` | `{kind, username, text}`：造一条弹幕喂给健身房（排练） |
+| POST | `/api/fitness/rest` | `{sec, next}`：开始组间休息 |
+| POST | `/api/fitness/complete` | 这组做完了（累加组数） |
+| POST | `/api/fitness/next` | 切到计划的下一块 |
+| POST | `/api/fitness/reset` | 清空健身房（动作/计划/休息/弹幕） |
+| POST | `/api/broadcast` | `{mode:'story'\|'fitness'\|'auto'}`：手动钉住直播模式 |
 
 ---
 

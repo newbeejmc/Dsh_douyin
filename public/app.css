@@ -140,6 +140,60 @@ body.bare {
   grid-area: pet;
 }
 
+/* 时段调度提示；固定在画面上方，方便 OBS/直播伴侣采集整屏。 */
+.broadcast-mode {
+  position: absolute;
+  z-index: 20;
+  top: clamp(10px, 1.2vh, 22px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: min(34vw, 420px);
+  padding: 8px 18px 10px;
+  border: 1px solid rgba(170, 220, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(7, 20, 42, 0.78);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(16px);
+  text-align: center;
+  pointer-events: none;
+}
+.broadcast-mode h2 {
+  margin: 1px 0 0;
+  font-size: clamp(14px, 1vw, 20px);
+  letter-spacing: 0.08em;
+}
+.broadcast-mode-kicker {
+  color: var(--ink-dim);
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.18em;
+}
+.broadcast-mode p {
+  margin: 2px 0 0;
+  color: var(--ink-soft);
+  font-size: var(--fs-kicker);
+}
+.fitness-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: #b9f8d3;
+  font-size: var(--fs-kicker);
+}
+.fitness-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6ff0a5;
+  box-shadow: 0 0 12px rgba(111, 240, 165, 0.85);
+}
+body.broadcast-fitness .broadcast-mode {
+  border-color: rgba(111, 240, 165, 0.36);
+}
+body.broadcast-fitness .bglayer {
+  filter: hue-rotate(28deg) saturate(1.08);
+}
+
 /* ---------- 玻璃卡片 ---------- */
 .card {
   position: relative;

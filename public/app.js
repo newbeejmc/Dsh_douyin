@@ -54,6 +54,10 @@ const el = {
   tocTopics: document.getElementById('tocTopics'),
   topicList: document.getElementById('topicList'),
   feed: document.getElementById('feed'),
+  broadcastMode: document.getElementById('broadcastMode'),
+  broadcastModeTitle: document.getElementById('broadcastModeTitle'),
+  broadcastModeText: document.getElementById('broadcastModeText'),
+  fitnessMode: document.getElementById('fitnessMode'),
 };
 
 const state = {
@@ -73,6 +77,7 @@ const state = {
   storyDisplayMode: 'story',
   storyProgressRatio: 0,
   clockBase: null,
+  broadcast: null,
 };
 
 /* ---------- 画面自适应：铺满浏览器，不做等比缩放 ---------- */
@@ -775,6 +780,21 @@ function renderStats(s) {
   if (el.danmakuN && state.events.length) el.danmakuN.textContent = `${state.events.length} 条`;
 }
 
+function renderBroadcast(view) {
+  if (!view) return;
+  state.broadcast = view;
+  const mode = view.mode === 'fitness' ? 'fitness' : 'story';
+  document.body.classList.toggle('broadcast-fitness', mode === 'fitness');
+  if (el.broadcastMode) el.broadcastMode.hidden = !view.enabled;
+  if (el.broadcastModeTitle) el.broadcastModeTitle.textContent = view.title || (mode === 'fitness' ? '健身指导' : '故事直播');
+  if (el.broadcastModeText) {
+    el.broadcastModeText.textContent = mode === 'fitness'
+      ? '健身时段走 /fitness 画面（动作演示 + 排课）；故事间这边暂停朗读'
+      : 'DeepSeek 负责互动话术，故事由本地定时器按进度播放';
+  }
+  if (el.fitnessMode) el.fitnessMode.hidden = mode !== 'fitness';
+}
+
 function renderBalance(b) {
   if (b && !b.error && b.total != null) {
     el.balVal.textContent = `¥${money(b.total)}`;
@@ -947,6 +967,7 @@ function initPlayer() {
 
 /* ---------- 初始化 ---------- */
 function applyInit(payload, { replay = true } = {}) {
+  renderBroadcast(payload.broadcast);
   renderStats(payload.stats);
   renderBalance(payload.balance);
   if (payload.config?.music?.volume != null) state.musicVolume = Number(payload.config.music.volume);
@@ -1021,6 +1042,9 @@ function connect() {
         break;
       case 'story':
         renderStory(payload.story, { mood: payload.mood });
+        break;
+      case 'broadcast':
+        renderBroadcast(payload.broadcast);
         break;
       case 'balance':
         renderBalance(payload.balance);

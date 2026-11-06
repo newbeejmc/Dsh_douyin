@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>大肥鱼 · 读小说直播间</title>
+    <title>大肥鱼 · AI 直播间</title>
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
@@ -112,6 +112,17 @@
             <div class="bubble" id="bubble">
               <span class="bubble-placeholder">灯亮着，纸上还空着第一行——等本鲸开口。</span>
             </div>
+          </div>
+        </section>
+
+        <!-- 时段调度状态：健身模式先显示接入状态，后续可叠加动作分析画面 -->
+        <section class="broadcast-mode" id="broadcastMode" hidden>
+          <div class="broadcast-mode-kicker">当前直播模式</div>
+          <h2 id="broadcastModeTitle">故事直播</h2>
+          <p id="broadcastModeText">按时段自动切换</p>
+          <div class="fitness-mode" id="fitnessMode" hidden>
+            <span class="fitness-dot"></span>
+            <span>健身时段 · 动作演示在 /fitness</span>
           </div>
         </section>
 

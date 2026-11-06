@@ -545,9 +545,19 @@
     await api('/api/reset', {});
   };
 
-  /* ---------- 三个分区 ---------- */
-  const TABS = ['basic', 'story', 'board'];
-  function switchTab(name) {
+  /* ---------- 四个分区（每个直播间一个页面） ---------- */
+  const TABS = ['basic', 'story', 'fitness', 'board'];
+  const TAB_PATH = { basic: '/admin', story: '/admin/story', fitness: '/admin/fitness', board: '/admin/board' };
+
+  function tabFromPath() {
+    const p = location.pathname.replace(/\/+$/, '');
+    if (p.endsWith('/fitness')) return 'fitness';
+    if (p.endsWith('/story')) return 'story';
+    if (p.endsWith('/board')) return 'board';
+    return 'basic';
+  }
+
+  function switchTab(name, { push = true } = {}) {
     if (!TABS.includes(name)) name = 'basic';
     document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.pane === name));
     document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('active', p.id === `pane-${name}`));
@@ -556,11 +566,20 @@
     } catch {
       /* 隐私模式无所谓 */
     }
+    if (push && location.pathname !== TAB_PATH[name]) {
+      try {
+        history.pushState({ tab: name }, '', TAB_PATH[name]);
+      } catch {
+        /* file:// 之类不能改 URL，忽略 */
+      }
+    }
+    if (name === 'fitness') loadFitness().catch(() => {});
     window.scrollTo({ top: 0 });
   }
   document.querySelectorAll('.tab').forEach((b) => {
     b.onclick = () => switchTab(b.dataset.pane);
   });
+  window.addEventListener('popstate', () => switchTab(tabFromPath(), { push: false }));
 
   /* ---------- 声音：音乐音量 + 大肥鱼音量 ---------- */
   const pct = (v) => `${Math.round(Number(v) * 100)}%`;
@@ -994,13 +1013,209 @@
     }
   }
 
+  /* ---------- 健身房直播间控制台 ---------- */
+  let fitPartsFilled = false;
+
+  function paintFitParts(parts) {
+    if (fitPartsFilled || !Array.isArray(parts) || !parts.length) return;
+    const opts = parts
+      .filter((p) => p && p.key)
+      .map((p) => `<option value="${escapeHtml(p.key)}">${escapeHtml(p.key)}（${p.count || 0}）</option>`)
+      .join('');
+    $('fitPart').innerHTML = `<option value="">全部</option>${opts}`;
+    $('fitPlanPart').innerHTML = opts;
+    // 排课默认落在「腿」，开播第一句「想练腿」就能直接上台
+    if ([...$('fitPlanPart').options].some((o) => o.value === '腿')) $('fitPlanPart').value = '腿';
+    fitPartsFilled = true;
+  }
+
+  function paintFit(d) {
+    paintFitParts(d.parts);
+    const live = Number(d.online) || 0;
+    $('fitLive').className = 'pill ' + (live > 0 ? 'ok' : 'bad');
+    $('fitLive').textContent = live > 0 ? `直播中 · ${live} 个画面` : '未打开';
+    const bits = [];
+    if (d.current) bits.push(`画面：${d.current.name}（${d.current.sets} 组 × ${d.current.reps}）`);
+    if (d.plan) bits.push(`今日：练${d.plan.part} · ${d.plan.estMin} 分钟 · ${d.plan.totalSets} 组`);
+    if (d.rest) {
+      const left = Math.max(0, Math.round((d.rest.endsAt - Date.now()) / 1000));
+      bits.push(`休息中 ${left}s${d.rest.nextName ? `（下一组 ${d.rest.nextName}）` : ''}`);
+    }
+    if (d.setsDone) bits.push(`已完成 ${d.setsDone} 组`);
+    $('fitNow').textContent = bits.join(' · ') || '还没开始：等弹幕点动作，或者在上面手动放一个。';
+  }
+
+  async function loadFitness() {
+    const d = await api('/api/fitness/state', null, 'GET');
+    paintFit(d);
+    if (!$('fitResults').children.length) renderFitResults(d.parts ? [] : []);
+  }
+
+  function renderFitResults(list) {
+    const ul = $('fitResults');
+    if (!Array.isArray(list) || !list.length) {
+      ul.innerHTML = '<li class="hint">还没有结果，输入关键词搜一下（深蹲 / 硬拉 / 推肩）。</li>';
+      return;
+    }
+    ul.innerHTML = list
+      .map(
+        (e) =>
+          `<li><span class="tag">${escapeHtml(e.part || '')}</span><span><b>${escapeHtml(e.name)}</b> · ${escapeHtml(e.equip || '徒手')}${e.target ? ` · ${escapeHtml(e.target)}` : ''}</span><button class="mini" data-id="${escapeHtml(e.id)}">上台</button></li>`,
+      )
+      .join('');
+    ul.querySelectorAll('button[data-id]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await api('/api/fitness/show', { id: b.dataset.id });
+          $('fitSearchState').textContent = '已放上画面，正在讲。';
+          loadFitness();
+        } catch (e) {
+          $('fitSearchState').textContent = `没放成：${e.message}`;
+        } finally {
+          b.disabled = false;
+        }
+      };
+    });
+  }
+
+  async function searchGym() {
+    const q = $('fitQuery').value.trim();
+    const part = $('fitPart').value || '';
+    $('fitSearchState').textContent = '在动作库里找…';
+    try {
+      const d = await api(`/api/fitness/search?q=${encodeURIComponent(q)}&part=${encodeURIComponent(part)}`, null, 'GET');
+      renderFitResults(d.list);
+      $('fitSearchState').textContent = `找到 ${d.list.length} 个${part ? `（${part}）` : ''}，点「上台」就放到画面。`;
+    } catch (e) {
+      $('fitSearchState').textContent = `搜索失败：${e.message}`;
+    }
+  }
+
+  if ($('fitSearch')) {
+    $('fitSearch').onclick = searchGym;
+    $('fitQuery').onkeydown = (e) => {
+      if (e.key === 'Enter') searchGym();
+    };
+    $('fitPart').onchange = searchGym;
+
+    $('fitPlanBtn').onclick = async () => {
+      $('fitPlanState').className = 'result show';
+      $('fitPlanState').textContent = '在排课…';
+      try {
+        const d = await api('/api/fitness/plan', {
+          part: $('fitPlanPart').value || '全身',
+          level: Number($('fitPlanLevel').value) || 0,
+          equip: $('fitPlanEquip').value || '',
+          minutes: Number($('fitPlanMin').value) || 45,
+        });
+        const p = d.plan;
+        $('fitPlanState').textContent = `排好了：练${p.part} · ${p.estMin} 分钟 · ${p.totalSets} 组。已经上台，大肥鱼会念一遍。`;
+        loadFitness();
+      } catch (e) {
+        $('fitPlanState').textContent = `排课失败：${e.message}`;
+      }
+    };
+
+    $('fitRest').onclick = async () => {
+      try {
+        await api('/api/fitness/rest', { sec: Number($('fitRestSec').value) || 90 });
+        $('fitRestState').className = 'result show';
+        $('fitRestState').textContent = `开始休息 ${Number($('fitRestSec').value) || 90} 秒，到点会自动喊下一组。`;
+        loadFitness();
+      } catch (e) {
+        $('fitRestState').textContent = `没开始：${e.message}`;
+      }
+    };
+
+    $('fitComplete').onclick = async () => {
+      try {
+        const d = await api('/api/fitness/complete', {});
+        $('fitRestState').textContent = `这一组记下了，今天累计 ${d.setsDone || 0} 组。`;
+        loadFitness();
+      } catch (e) {
+        $('fitRestState').textContent = `没记上：${e.message}`;
+      }
+    };
+
+    $('fitNext').onclick = async () => {
+      try {
+        await api('/api/fitness/next', {});
+        $('fitRestState').textContent = '换到下一个动作了。';
+        loadFitness();
+      } catch (e) {
+        $('fitRestState').textContent = `没换成：${e.message}`;
+      }
+    };
+
+    $('fitReset').onclick = async () => {
+      if (!confirm('清空健身房的画面、计划、休息和弹幕？')) return;
+      await api('/api/fitness/reset', {});
+      $('fitRestState').textContent = '健身房已经清空。';
+      loadFitness();
+    };
+
+    $('fitSay').onclick = async () => {
+      const text = $('fitSayText').value.trim();
+      if (!text) return;
+      $('fitSay').disabled = true;
+      try {
+        await api('/api/fitness/say', { text });
+        $('fitSayText').value = '';
+      } finally {
+        $('fitSay').disabled = false;
+      }
+    };
+
+    $('fitDmChat').onclick = async () => {
+      try {
+        await api('/api/fitness/demo', { kind: 'chat', username: $('fitDmName').value || '测试观众', text: $('fitDmText').value || '想练腿' });
+      } catch (e) {
+        alert(`发失败：${e.message}`);
+      }
+    };
+
+    $('fitDmGift').onclick = async () => {
+      try {
+        await api('/api/fitness/demo', { kind: 'gift', username: $('fitDmName').value || '测试观众', giftName: '小心心', count: 1 });
+      } catch (e) {
+        alert(`发失败：${e.message}`);
+      }
+    };
+
+    $('fitDmEnter').onclick = async () => {
+      try {
+        await api('/api/fitness/demo', { kind: 'enter', username: $('fitDmName').value || '测试观众' });
+      } catch (e) {
+        alert(`发失败：${e.message}`);
+      }
+    };
+
+    $('fitOpen').onclick = () => window.open('/fitness', '_blank');
+
+    const modeBtn = (mode, label) => async () => {
+      try {
+        const d = await api('/api/broadcast', { mode });
+        $('fitModeState').className = 'result show';
+        $('fitModeState').textContent = `${label}：现在直播间是「${d.broadcast?.title || d.broadcast?.mode || mode}」。`;
+      } catch (e) {
+        $('fitModeState').textContent = `切换失败：${e.message}`;
+      }
+    };
+    $('fitShowStory').onclick = modeBtn('story', '已切到故事间');
+    $('fitShowFitness').onclick = modeBtn('fitness', '已切到健身房');
+    $('fitAuto').onclick = modeBtn('auto', '已恢复按时段自动');
+    setInterval(() => loadFitness().catch(() => {}), 6000);
+  }
+
   setInterval(loadDanmaku, 5000);
 
   try {
-    switchTab(localStorage.getItem('dfy.admin.tab') || 'basic');
+    switchTab(tabFromPath(), { push: false });
   } catch {
-    switchTab('basic');
+    switchTab('basic', { push: false });
   }
+  loadFitness().catch(() => {});
   loadMusic();
   loadVoice();
   loadNovels().catch(() => {});
